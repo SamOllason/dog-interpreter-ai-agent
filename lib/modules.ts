@@ -56,7 +56,7 @@ export interface TimeContextOutput {
 /**
  * Output of the weatherContext tool. Mimics a temperature/weather API.
  * Mock: delay + return based on location. Later: swap for e.g. Open-Meteo.
- * See next-steps-chaining-and-api.md.
+ * See docs/next-steps-chaining-and-api.md.
  */
 export interface WeatherContextOutput {
   tempC: number;
@@ -175,7 +175,7 @@ function delay(ms: number): Promise<void> {
 /**
  * weatherContext — async tool that mimics a temperature/weather API.
  * Chain inside the tool: scenario → extract location → "call" API (delay + lookup).
- * Used in scoring: isHot → discomfort; isCold + door → toilet. See next-steps-chaining-and-api.md.
+ * Used in scoring: isHot → discomfort; isCold + door → toilet. See docs/next-steps-chaining-and-api.md.
  */
 export async function weatherContext(
   input: string

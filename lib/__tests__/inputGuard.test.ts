@@ -1,6 +1,6 @@
 /**
  * Unit tests for validateScenario (input guard).
- * See bad-input-handling.md for the contract and behaviour.
+ * See docs/bad-input-handling.md for the contract and behaviour.
  */
 
 import { validateScenario } from "../inputGuard";

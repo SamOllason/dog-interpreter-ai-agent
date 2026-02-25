@@ -2,7 +2,7 @@
 
 An AI-native UX demo: structured reasoning + transparency (no magic chatbots)
 
-**This project is a learning tool.** It’s designed to help you understand how AI agents work — tools, orchestration, structured outputs, and traceability — using a small, playful example (interpreting dog behaviour) instead of abstract diagrams. If you’re new to agents, start with [agent-architecture.md](agent-architecture.md) and the FAQs there; then explore the code and add a tool yourself.
+**This project is a learning tool.** It’s designed to help you understand how AI agents work — tools, orchestration, structured outputs, and traceability — using a small, playful example (interpreting dog behaviour) instead of abstract diagrams. If you’re new to agents, start with [how-this-works.md](docs/how-this-works.md) and the FAQs there; then explore the code and add a tool yourself.
 
 ## What this is
 
@@ -55,6 +55,8 @@ In this system, each module is a tool that returns structured signals.
 - 🌡️ `weatherContext` — **async**, mimics a temperature/weather API: extracts location from the scenario (garden, walk, etc.), “calls” a mocked API (delay + typed response), returns `tempC`, `isHot`, `isCold`. Used in scoring (hot → discomfort; cold + door → toilet). Demonstrates chaining (location → API) and swapping for a real API later. See **[next-steps-chaining-and-api.md](docs/next-steps-chaining-and-api.md)**.
 
 Start with mocked outputs or keyword rules. Later, swap in an LLM for extraction while keeping the same contracts.
+
+---
 
 ### Learning: Adding a new tool
 
@@ -296,9 +298,3 @@ Tick off as you go. Only Phase 1 is in scope until it’s complete.
 - [ ] Deploy
 
 **Where we are now:** **Phase 1 complete.** All 1.1–1.6 are done. The `timeContext` tool is added as a learning example: one extra module, wired into scoring (door + night → toilet_needed), with comments in the code and tests.
-
-#   d o g - i n t e r p r e t e r - a i - a g e n t 
- 
- #   d o g - i n t e r p r e t e r - a i - a g e n t 
- 
- 

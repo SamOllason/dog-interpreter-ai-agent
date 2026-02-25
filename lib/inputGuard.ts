@@ -1,7 +1,7 @@
 /**
  * Input guard: validate scenario before passing to the orchestrator.
  * Rejects empty, inappropriate, off-topic, and spam-like input.
- * See bad-input-handling.md for the plan. Contract is swappable (e.g. moderation API later).
+ * See docs/bad-input-handling.md for the plan. Contract is swappable (e.g. moderation API later).
  */
 
 import { INAPPROPRIATE_WORDS } from "./inputGuardBlocklist";
