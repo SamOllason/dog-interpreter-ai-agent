@@ -173,7 +173,7 @@ function scoreMotivations(signals: CollectedSignals): MotivationScore[] {
       const normalised = Math.round(scale * score * 100) / 100;
       const calculation =
         contributions.length > 0
-          ? `${contributions.map((c) => c.toFixed(2)).join(" + ")} = ${score.toFixed(2)} raw → × (1/${total.toFixed(2)}) ≈ ${normalised.toFixed(2)} (normalised so all scores sum to 1)`
+          ? `${contributions.map((c, i) => `${c.toFixed(2)} (${evidence[i] ?? "signal"})`).join(" + ")} = ${score.toFixed(2)} raw → × (1/${total.toFixed(2)}) ≈ ${normalised.toFixed(2)} (normalised so all scores sum to 1)`
           : undefined;
       return {
         motivation,

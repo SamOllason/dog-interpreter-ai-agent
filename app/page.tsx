@@ -200,7 +200,7 @@ export default function Home() {
                   Score calculation
                 </h3>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-3">
-                  Each motivation gets a raw score from the module signals (fixed weights per signal). Raw scores are then normalised (divided by the total) so all scores sum to 1. The maths for each score:
+                  Each motivation gets a raw score from the module signals (fixed weights per signal). Each addend in the formula is one such weight; the text in parentheses shows which signal it came from. Raw scores are then normalised (divided by the total) so all scores sum to 1.
                 </p>
                 <ul className="space-y-3 text-xs">
                   {result.rankedMotivations.map((m) => (

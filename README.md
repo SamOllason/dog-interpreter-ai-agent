@@ -2,7 +2,7 @@
 
 An AI-native UX demo: structured reasoning + transparency (no magic chatbots)
 
-**This project is a learning tool.** It’s designed to help you understand how AI agents work — tools, orchestration, structured outputs, and traceability — using a small, playful example (interpreting dog behaviour) instead of abstract diagrams. If you’re new to agents, start with [how-this-works.md](how-this-works.md) and the FAQs there; then explore the code and add a tool yourself.
+**This project is a learning tool.** It’s designed to help you understand how AI agents work — tools, orchestration, structured outputs, and traceability — using a small, playful example (interpreting dog behaviour) instead of abstract diagrams. If you’re new to agents, start with [agent-architecture.md](agent-architecture.md) and the FAQs there; then explore the code and add a tool yourself.
 
 ## What this is
 
@@ -13,7 +13,7 @@ Dog Interpreter is a small, portfolio-ready project that answers:
 You describe a moment (behaviour + context), and the system produces a structured analysis:
 
 - What signals it noticed (modules/tools)
-- Ranked likely motivations (`"wants food"`, `"needs toilet"`, `"bored"`, `"alerting"`, etc.)
+- Ranked likely motivations (e.g. wants food, needs toilet, bored, alerting)
 - A recommended human action
 - A confidence score
 - A visible trace of how the result was produced
@@ -52,7 +52,7 @@ In this system, each module is a tool that returns structured signals.
 - 🧠 `rewardMemory` — learned patterns (`"stare got treats before"`)
 - ❤️ `emotionState` — anxiety/excitement/boredom indicators
 - 🕐 `timeContext` — time-of-day and meal-time cues inferred from the scenario (e.g. “10pm”, “breakfast”). Used in scoring (e.g. door + night → stronger toilet_needed). See [Learning: Adding a new tool](#learning-adding-a-new-tool) below.
-- 🌡️ `weatherContext` — **async**, mimics a temperature/weather API: extracts location from the scenario (garden, walk, etc.), “calls” a mocked API (delay + typed response), returns `tempC`, `isHot`, `isCold`. Used in scoring (hot → discomfort; cold + door → toilet). Demonstrates chaining (location → API) and swapping for a real API later. See **[next-steps-chaining-and-api.md](next-steps-chaining-and-api.md)**.
+- 🌡️ `weatherContext` — **async**, mimics a temperature/weather API: extracts location from the scenario (garden, walk, etc.), “calls” a mocked API (delay + typed response), returns `tempC`, `isHot`, `isCold`. Used in scoring (hot → discomfort; cold + door → toilet). Demonstrates chaining (location → API) and swapping for a real API later. See **[next-steps-chaining-and-api.md](docs/next-steps-chaining-and-api.md)**.
 
 Start with mocked outputs or keyword rules. Later, swap in an LLM for extraction while keeping the same contracts.
 
@@ -232,7 +232,7 @@ npm test
 This repo includes **unit tests** (Jest) in `lib/__tests__/`:
 
 - **`modules.test.ts`** — each module stub: given a scenario string, assert the structured signal output (e.g. food scenario → `foodPresent`/`eatingNearby`; door + pacing → `doorFocus`, `pacing`, `sniffing`). Locks input/output behaviour so you can refactor or swap to an LLM later without breaking contracts.
-- **`interpreter.test.ts`** — full `runDogInterpreter` flow: result shape (summary, rankedMotivations, trace, confidence), scores sum correctly, example scenarios (food → top `food_request`, toilet → top `toilet_needed`), and trace contains all four modules with input/output.
+- **`interpreter.test.ts`** — full `runDogInterpreter` flow: result shape (summary, rankedMotivations, trace, confidence), scores sum correctly, example scenarios (food → top `food_request`, toilet → top `toilet_needed`), and trace contains all five modules (including `timeContext`) with input/output.
 
 Tests are deterministic and fast; they document how the system is supposed to behave and guard against regressions when you add error handling, new motivations, or replace mocks with real tool calls.
 
@@ -271,8 +271,6 @@ This project is a **toy domain**, but the architecture and testing approach map 
 - **Tests as the specification** — The unit tests here don’t test the LLM; they test the *orchestration and contracts*. In real apps, you should test: tool input/output shapes, aggregation logic, confidence rules, and error handling. The stochastic part (LLM) can be mocked or tested separately (evals, golden datasets). That keeps the agent pipeline reliable and shippable.
 
 So: **this repo is a small, testable blueprint for the kind of agent design you want in real products** — deterministic shell, typed contracts, trace, confidence, and tests around the behaviour you care about.
-
----
 
 ## Phases & progress
 
