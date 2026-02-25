@@ -1,4 +1,4 @@
-# 🐶 Dog Interpreter — Project 01
+# 🐶 Dog Interpreter - Project 01
 
 An AI-native UX demo: structured reasoning + transparency (no magic chatbots)
 
@@ -18,7 +18,7 @@ You describe a moment (behaviour + context), and the system produces a structure
 - A confidence score
 - A visible trace of how the result was produced
 
-This is intentionally playful — but built using serious AI-product patterns: tools, structured outputs, deterministic orchestration, and transparent UX.
+This is intentionally playful - but built using serious AI-product patterns: tools, structured outputs, deterministic orchestration, and transparent UX.
 
 ## Goals
 
