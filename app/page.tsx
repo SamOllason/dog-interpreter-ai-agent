@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { runDogInterpreter } from "../lib/interpreter";
 import { validateScenario } from "../lib/inputGuard";
 import type { InputGuardReason } from "../lib/inputGuard";
-import type { DogInterpretation } from "../lib/types";
+import type { DogInterpreterMultiAgentResult } from "../lib/types";
 
 const REJECTED_MESSAGE: Record<InputGuardReason, string> = {
   empty: "Please describe what's happening — the scenario box is empty.",
@@ -51,31 +50,53 @@ const EXAMPLE_SCENARIOS = [
     label: "Sniffing at the door",
     text: "She's sniffing along the bottom of the back door and won't leave it.",
   },
+  {
+    label: "Water bowl + circling",
+    text: "He has pushed over his water bowl and is moving in circles.",
+  },
+  {
+    label: "Kitchen: food vs attention",
+    text: "He keeps whining and pawing at my leg while I'm in the kitchen, sometimes glancing toward the counter where we keep treats, but it's not his usual meal time.",
+  },
 ];
 
 const CONFIDENCE_UNCLEAR_THRESHOLD = 0.5;
 
 export default function Home() {
   const [scenario, setScenario] = useState("");
-  const [result, setResult] = useState<DogInterpretation | null>(null);
+  const [result, setResult] = useState<DogInterpreterMultiAgentResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [rejectedReason, setRejectedReason] = useState<InputGuardReason | null>(null);
+  const [clarifyingQuestion, setClarifyingQuestion] = useState<string | null>(null);
 
   async function handleInterpret() {
     const trimmed = scenario.trim();
     setRejectedReason(null);
     setResult(null);
+    setClarifyingQuestion(null);
 
     const guard = validateScenario(trimmed);
-    if (!guard.allowed) {
+    if (guard.allowed === false) {
       setRejectedReason(guard.reason);
       return;
     }
 
     setLoading(true);
     try {
-      const interpretation = await runDogInterpreter(trimmed);
+      const res = await fetch("/api/interpret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario: trimmed }),
+      });
+
+      if (!res.ok) {
+        console.error("Interpretation API failed", await res.text());
+        return;
+      }
+
+      const interpretation: DogInterpreterMultiAgentResult = await res.json();
       setResult(interpretation);
+      setClarifyingQuestion(interpretation.clarifyingQuestion?.text ?? null);
     } finally {
       setLoading(false);
     }
@@ -98,8 +119,15 @@ export default function Home() {
           <h2 id="scenario-heading" className="sr-only">
             Describe the scenario
           </h2>
-          <label htmlFor="scenario" className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-            What’s happening?
+          <label htmlFor="scenario" className="text-sm font-medium text-neutral-700 dark:text-neutral-300 flex items-center gap-1">
+            <span>What’s happening?</span>
+            <span
+              className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-neutral-400 dark:border-neutral-500 text-[10px] font-semibold text-neutral-500 dark:text-neutral-300 cursor-help"
+              title="Describe what your dog is doing in natural language, including context and body language. For example: &quot;He has pushed over his water bowl and is moving in circles.&quot;"
+              aria-label="Info: you can describe behaviour in natural language; the agent will extract signals like pacing from phrases such as 'moving in circles'."
+            >
+              i
+            </span>
           </label>
           <textarea
             id="scenario"
@@ -107,6 +135,7 @@ export default function Home() {
             onChange={(e) => {
               setScenario(e.target.value);
               if (rejectedReason) setRejectedReason(null);
+              if (clarifyingQuestion) setClarifyingQuestion(null);
             }}
             placeholder="e.g. He’s staring at me while I eat toast and whining softly."
             className="w-full min-h-[120px] px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent focus-visible:ring-2 focus-visible:ring-amber-500"
@@ -151,11 +180,11 @@ export default function Home() {
           )}
           {result && (
             <div className="space-y-3 text-sm">
-              <p className="text-neutral-700 dark:text-neutral-300">{result.summary}</p>
+              <p className="text-neutral-700 dark:text-neutral-300">{result.primary.summary}</p>
               <div>
                 <h3 className="font-medium text-neutral-600 dark:text-neutral-400 mb-1">Likely motivations</h3>
                 <ul className="list-disc list-inside space-y-0.5 text-neutral-600 dark:text-neutral-400">
-                  {result.rankedMotivations.map((m) => (
+                  {result.primary.rankedMotivations.map((m) => (
                     <li key={m.motivation}>
                       <span className="font-mono text-neutral-500 dark:text-neutral-500">{m.motivation}</span>{" "}
                       ({m.score.toFixed(2)}) — {m.evidence.join(", ")}
@@ -165,19 +194,52 @@ export default function Home() {
               </div>
               <p>
                 <span className="font-medium text-neutral-600 dark:text-neutral-400">Recommended action:</span>{" "}
-                {result.recommendedHumanAction}
+                {result.primary.recommendedHumanAction}
               </p>
               <p>
                 <span className="font-medium text-neutral-600 dark:text-neutral-400">Confidence:</span>{" "}
-                <span className={result.confidence < CONFIDENCE_UNCLEAR_THRESHOLD ? "text-amber-600 dark:text-amber-400" : ""}>
-                  {(result.confidence * 100).toFixed(0)}%
+                <span
+                  className={
+                    result.primary.confidence < CONFIDENCE_UNCLEAR_THRESHOLD
+                      ? "text-amber-600 dark:text-amber-400"
+                      : ""
+                  }
+                >
+                  {(result.primary.confidence * 100).toFixed(0)}%
                 </span>
-                {result.confidence < CONFIDENCE_UNCLEAR_THRESHOLD && (
-                  <span className="block mt-1 text-amber-700 dark:text-amber-400 text-xs">
-                    Interpretation is uncertain — consider adding more detail.
+              </p>
+              <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+                <span className="font-medium text-neutral-700 dark:text-neutral-300">Safety review:</span>{" "}
+                <span
+                  className={
+                    result.safety.overallRisk === "high"
+                      ? "text-red-700 dark:text-red-400"
+                      : result.safety.overallRisk === "medium"
+                      ? "text-amber-700 dark:text-amber-400"
+                      : "text-emerald-700 dark:text-emerald-400"
+                  }
+                >
+                  {result.safety.overallRisk === "high"
+                    ? "High risk – use caution and consider consulting a professional."
+                    : result.safety.overallRisk === "medium"
+                    ? "Some concerns – treat this as a hypothesis and keep observing."
+                    : "Low risk everyday scenario based on current rules."}
+                </span>{" "}
+                {!result.safety.safeToAct && (
+                  <span className="block text-[11px] text-red-700 dark:text-red-400">
+                    The safety agent does not recommend acting solely on this advice.
                   </span>
                 )}
-              </p>
+              </div>
+              {clarifyingQuestion && (
+                <div className="mt-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  <p className="font-medium">Clarifying question to improve this interpretation</p>
+                  <p>{clarifyingQuestion}</p>
+                  <p className="mt-1 text-[11px] text-amber-700/80 dark:text-amber-300/80">
+                    If you can answer this, add that detail to the scenario above and run another interpretation.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -189,7 +251,7 @@ export default function Home() {
           </h2>
           {!result && (
             <p className="text-sm text-neutral-500 dark:text-neutral-500">
-              After you interpret, this section shows how each score was calculated (the maths), the evidence from the modules, and the raw module outputs.
+              After you interpret, this section shows how each score was calculated (the maths), the evidence from the modules, the raw module outputs, and how the separate safety agent reviewed the result.
             </p>
           )}
           {result && (
@@ -200,10 +262,17 @@ export default function Home() {
                   Score calculation
                 </h3>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-3">
-                  Each motivation gets a raw score from the module signals (fixed weights per signal). Each addend in the formula is one such weight; the text in parentheses shows which signal it came from. Raw scores are then normalised (divided by the total) so all scores sum to 1.
+                  <span className="inline-flex items-center justify-center w-4 h-4 mr-1 rounded-full border border-neutral-400 dark:border-neutral-500 text-[10px] font-semibold text-neutral-500 dark:text-neutral-300 align-text-top">
+                    i
+                  </span>
+                  <em>
+                    Each motivation gets a raw score from the module signals (fixed weights per signal). Each addend in the
+                    formula is one such weight; the text in parentheses shows which signal it came from. Raw scores are then
+                    normalized (divided by the total) so all scores sum to 1.
+                  </em>
                 </p>
                 <ul className="space-y-3 text-xs">
-                  {result.rankedMotivations.map((m) => (
+                  {result.primary.rankedMotivations.map((m) => (
                     <li key={m.motivation} className="flex flex-col gap-1">
                       <span className="font-mono font-medium text-neutral-700 dark:text-neutral-300">
                         {m.motivation} ({(m.score * 100).toFixed(0)}%)
@@ -221,19 +290,26 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
-                {result.confidenceExplanation && (
+                {result.primary.confidenceExplanation && (
                   <p className="mt-3 pt-2 border-t border-amber-200 dark:border-amber-800 text-xs text-neutral-600 dark:text-neutral-400">
-                    {result.confidenceExplanation}
+                    {result.primary.confidenceExplanation}
                   </p>
                 )}
               </div>
               {/* Raw module outputs (what each tool returned) */}
               <div>
-                <h3 className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-2">
-                  Module outputs (inputs to scoring)
+                <h3 className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-2 flex items-center gap-1">
+                  <span>Module outputs (inputs to scoring)</span>
+                  <span
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-neutral-400 dark:border-neutral-500 text-[10px] font-semibold text-neutral-500 dark:text-neutral-300 cursor-help"
+                    title="This demo can use an LLM to infer signals from meaning, e.g. treating &quot;moving in circles&quot; as pacing even if the word &quot;pacing&quot; is not in the text."
+                    aria-label="Info: the body-language tool can infer signals like pacing from phrases such as 'moving in circles', not only from exact keywords."
+                  >
+                    i
+                  </span>
                 </h3>
                 <ul className="space-y-3">
-                  {result.trace.map((activation) => (
+                  {result.primary.trace.map((activation) => (
                     <li
                       key={activation.module}
                       className="rounded-md border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-800/50 p-2"
@@ -247,6 +323,63 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
+              </div>
+              {/* Safety agent: how the second pass reviewed the result */}
+              <div className="rounded-md border border-sky-200 dark:border-sky-800 bg-sky-50/60 dark:bg-sky-900/20 p-3">
+                <h3 className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-2">
+                  Safety review agent (second pass)
+                </h3>
+                <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 mr-1 rounded-full border border-neutral-400 dark:border-neutral-500 text-[10px] font-semibold text-neutral-500 dark:text-neutral-300 align-text-top">
+                    i
+                  </span>
+                  <em>
+                    After the primary interpreter produces its structured result, a separate safety agent reviews it and the
+                    original text. It looks for uncertainty and possible discomfort/health signals, then produces its own
+                    structured review.
+                  </em>
+                </p>
+                <p className="text-xs text-neutral-700 dark:text-neutral-300 mb-2">
+                  Overall risk:{" "}
+                  <span
+                    className={
+                      result.safety.overallRisk === "high"
+                        ? "font-semibold text-red-700 dark:text-red-400"
+                        : result.safety.overallRisk === "medium"
+                        ? "font-semibold text-amber-700 dark:text-amber-400"
+                        : "font-semibold text-emerald-700 dark:text-emerald-400"
+                    }
+                  >
+                    {result.safety.overallRisk}
+                  </span>{" "}
+                  | Safe to act on this advice alone:{" "}
+                  <span className="font-mono">
+                    {result.safety.safeToAct ? "true (according to current rules)" : "false – use caution"}
+                  </span>
+                </p>
+                {result.safety.issues.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Issues raised:</p>
+                    <ul className="mt-1 space-y-1 text-xs text-neutral-600 dark:text-neutral-400 list-disc list-inside">
+                      {result.safety.issues.map((issue) => (
+                        <li key={issue.id}>
+                          <span className="font-mono text-neutral-500 dark:text-neutral-400">{issue.id}</span>:{" "}
+                          {issue.description}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {result.safety.rationale.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">How the safety agent decided:</p>
+                    <ul className="mt-1 space-y-1 text-xs text-neutral-600 dark:text-neutral-400 list-disc list-inside">
+                      {result.safety.rationale.map((line, idx) => (
+                        <li key={idx}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
           )}

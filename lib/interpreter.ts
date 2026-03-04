@@ -13,6 +13,7 @@ import type {
   ModuleActivation,
   Motivation,
   MotivationScore,
+  DogInterpreterMultiAgentResult,
 } from "./types";
 import {
   MODULES,
@@ -22,8 +23,12 @@ import {
   type RewardMemoryOutput,
   type EmotionStateOutput,
   type TimeContextOutput,
+  type LocationFromScenarioOutput,
   type WeatherContextOutput,
+  locationFromScenario,
+  weatherContext,
 } from "./modules";
+import { runSafetyReview } from "./safetyAgent";
 
 // --- Scoring: aggregate signals into motivation weights + evidence -------------
 // LEARNING: CollectedSignals is the bag of all tool outputs. When you add a new
@@ -265,18 +270,58 @@ export async function runDogInterpreter(input: string): Promise<DogInterpretatio
   const trimmed = input.trim();
   const trace: ModuleActivation[] = [];
 
+  // Step 1: run all scenario-based modules with the full text input.
   for (const name of MODULE_NAMES) {
     const raw = MODULES[name](trimmed);
     const output = await Promise.resolve(raw);
     trace.push({ module: name, input: trimmed, output });
   }
 
+  // Step 2A: explicit locationFromScenario tool (scenario → coarse location label).
+  const locationResult: LocationFromScenarioOutput = locationFromScenario(trimmed);
+  trace.push({
+    module: "locationFromScenario",
+    input: trimmed,
+    output: locationResult,
+  });
+
+  // Step 2B: weatherContext chained on location (location → weather/temperature).
+  const weatherResult: WeatherContextOutput = await weatherContext(locationResult.location);
+  trace.push({
+    module: "weatherContext",
+    input: locationResult.location,
+    output: weatherResult,
+  });
+
   const food = trace.find((t) => t.module === "foodContext")?.output as FoodContextOutput;
-  const body = trace.find((t) => t.module === "bodyLanguage")?.output as BodyLanguageOutput;
+  let body = trace.find((t) => t.module === "bodyLanguage")?.output as BodyLanguageOutput;
   const memory = trace.find((t) => t.module === "rewardMemory")?.output as RewardMemoryOutput;
   const emotion = trace.find((t) => t.module === "emotionState")?.output as EmotionStateOutput;
   const time = trace.find((t) => t.module === "timeContext")?.output as TimeContextOutput;
-  const weather = trace.find((t) => t.module === "weatherContext")?.output as WeatherContextOutput;
+  const weather = weatherResult;
+
+  // Step 2C: optional LLM-backed refinement of body-language signals (server-only).
+  // LEARNING: This shows how you could plug an LLM into a single module
+  // without changing the rest of the orchestrator.
+  if (typeof window === "undefined" && process.env.OPENAI_API_KEY) {
+    try {
+      const { inferBodyLanguageSignals } = await import("./llm/bodyLanguageClient");
+      const llmBody = await inferBodyLanguageSignals(trimmed);
+
+      // Update the trace entry so the UI shows the LLM-backed output.
+      const bodyIndex = trace.findIndex((t) => t.module === "bodyLanguage");
+      if (bodyIndex !== -1) {
+        trace[bodyIndex] = { ...trace[bodyIndex], output: llmBody };
+      }
+
+      body = llmBody;
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn("LLM bodyLanguage refinement failed; using rule-based signals instead.", error);
+      }
+    }
+  }
 
   const signals: CollectedSignals = { food, body, memory, emotion, time, weather };
   const rankedMotivations = scoreMotivations(signals);
@@ -295,4 +340,20 @@ export async function runDogInterpreter(input: string): Promise<DogInterpretatio
     confidenceExplanation,
     trace,
   };
+}
+
+/**
+ * Multi-agent wrapper: primary interpreter + safety/critic agent.
+ *
+ * LEARNING: This keeps `runDogInterpreter` unchanged and adds a second,
+ * independent pass (`runSafetyReview`) whose job is to assess risk. The UI can
+ * render and compare both to teach multi-agent traceability.
+ */
+export async function runDogInterpreterWithSafety(
+  input: string
+): Promise<DogInterpreterMultiAgentResult> {
+  const primary = await runDogInterpreter(input);
+  const safety = runSafetyReview(input, primary);
+
+  return { primary, safety };
 }

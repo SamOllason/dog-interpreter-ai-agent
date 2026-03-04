@@ -18,7 +18,7 @@ describe("runDogInterpreter", () => {
       trace: expect.any(Array),
     });
     expect(result.rankedMotivations.length).toBeGreaterThanOrEqual(1);
-    expect(result.trace.length).toBe(6); // all 6 modules (incl. timeContext, weatherContext)
+    expect(result.trace.length).toBe(7); // all scenario modules + locationFromScenario + weatherContext
     expect(result.confidence).toBeGreaterThanOrEqual(0.2);
     expect(result.confidence).toBeLessThanOrEqual(1);
 
@@ -49,7 +49,7 @@ describe("runDogInterpreter", () => {
     expect(result.recommendedHumanAction.toLowerCase()).toMatch(/out|toilet|briefly/);
   });
 
-  it("trace contains all six modules with input and output", async () => {
+  it("trace contains all modules with correct inputs and outputs", async () => {
     const input = "Whining and staring.";
     const result = await runDogInterpreter(input);
 
@@ -59,10 +59,22 @@ describe("runDogInterpreter", () => {
     expect(names).toContain("rewardMemory");
     expect(names).toContain("emotionState");
     expect(names).toContain("timeContext");
+    expect(names).toContain("locationFromScenario");
     expect(names).toContain("weatherContext");
 
+    const trimmed = input.trim();
+    const locationEntry = result.trace.find((t) => t.module === "locationFromScenario");
+    expect(locationEntry).toBeDefined();
+    const locationOutput = locationEntry!.output as { location: string };
+
     for (const entry of result.trace) {
-      expect(entry.input).toBe(input.trim());
+      if (entry.module === "weatherContext") {
+        // weatherContext should take the chained location string as input
+        expect(entry.input).toBe(locationOutput.location);
+      } else {
+        // all other modules operate directly on the full scenario string
+        expect(entry.input).toBe(trimmed);
+      }
       expect(entry.output).toBeDefined();
       expect(typeof entry.output).toBe("object");
     }

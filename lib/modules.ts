@@ -10,6 +10,7 @@
  */
 
 import type { ModuleName } from "./types";
+import { inferBodyLanguageSignals } from "./llm/bodyLanguageClient";
 
 // --- Output types (structured signals from each module) ---------------------
 
@@ -66,6 +67,15 @@ export interface WeatherContextOutput {
   locationUsed: string;
 }
 
+/**
+ * Output of the locationFromScenario tool.
+ * Step A in the chaining example: infer a coarse location label from the
+ * free-text scenario so that weatherContext can take a simple string input.
+ */
+export interface LocationFromScenarioOutput {
+  location: "home" | "garden" | "outside" | "park" | "walk";
+}
+
 // --- Helpers ----------------------------------------------------------------
 
 function hasAny(text: string, keywords: string[]): boolean {
@@ -84,7 +94,7 @@ export function foodContext(input: string): FoodContextOutput {
   };
 }
 
-export function bodyLanguage(input: string): BodyLanguageOutput {
+function bodyLanguageRuleBased(input: string): BodyLanguageOutput {
   const t = input.toLowerCase();
   return {
     staring: hasAny(t, ["staring", "stare", "stares", "watching", "eyes on"]),
@@ -94,6 +104,27 @@ export function bodyLanguage(input: string): BodyLanguageOutput {
     tailUp: hasAny(t, ["tail up", "tail wag", "wagging", "tail"]),
     sniffing: hasAny(t, ["sniffing", "sniff", "sniffing the ground"]),
   };
+}
+
+/**
+ * bodyLanguage — now optionally backed by an LLM while keeping the same contract.
+ *
+ * - Default: use the original keyword-based implementation (bodyLanguageRuleBased).
+ * - When USE_LLM_BODY_LANGUAGE === "true": call inferBodyLanguageSignals and
+ *   fall back to the rule-based version if anything goes wrong.
+ */
+export async function bodyLanguage(input: string): Promise<BodyLanguageOutput> {
+  if (process.env.USE_LLM_BODY_LANGUAGE === "true") {
+    try {
+      return await inferBodyLanguageSignals(input);
+    } catch {
+      // On any LLM/config/validation error, keep behaviour stable by falling
+      // back to the deterministic rule-based implementation.
+      return bodyLanguageRuleBased(input);
+    }
+  }
+
+  return bodyLanguageRuleBased(input);
 }
 
 export function rewardMemory(input: string): RewardMemoryOutput {
@@ -145,10 +176,10 @@ export function timeContext(input: string): TimeContextOutput {
   return { timeOfDay, nearMealTime };
 }
 
-// --- Weather (mocked API: demonstrates async tool + internal chaining) -------
+// --- Weather + location (mocked API + explicit chaining) ---------------------
 
 const MOCK_WEATHER_BY_LOCATION: Record<
-  string,
+  LocationFromScenarioOutput["location"],
   { tempC: number; conditions: string }
 > = {
   home: { tempC: 22, conditions: "mild" },
@@ -158,13 +189,21 @@ const MOCK_WEATHER_BY_LOCATION: Record<
   walk: { tempC: 8, conditions: "breezy" },
 };
 
-function extractLocationFromScenario(scenario: string): string {
-  const t = scenario.toLowerCase();
-  if (hasAny(t, ["garden", "backyard", "yard"])) return "garden";
-  if (hasAny(t, ["park", "field"])) return "park";
-  if (hasAny(t, ["outside", "outdoors", "out for a walk", "on the walk"])) return "outside";
-  if (hasAny(t, ["walk", "walking", "on a walk"])) return "walk";
-  return "home";
+/**
+ * locationFromScenario — Step A in the chaining example.
+ * Infers a coarse location label from the free-text scenario using simple
+ * keyword rules. The orchestrator records this as its own trace entry and
+ * passes the `location` string into weatherContext.
+ */
+export function locationFromScenario(input: string): LocationFromScenarioOutput {
+  const t = input.toLowerCase();
+  if (hasAny(t, ["garden", "backyard", "yard"])) return { location: "garden" };
+  if (hasAny(t, ["park", "field"])) return { location: "park" };
+  if (hasAny(t, ["outside", "outdoors", "out for a walk", "on the walk"])) {
+    return { location: "outside" };
+  }
+  if (hasAny(t, ["walk", "walking", "on a walk"])) return { location: "walk" };
+  return { location: "home" };
 }
 
 /** Simulate network delay (e.g. 80ms). */
@@ -174,13 +213,15 @@ function delay(ms: number): Promise<void> {
 
 /**
  * weatherContext — async tool that mimics a temperature/weather API.
- * Chain inside the tool: scenario → extract location → "call" API (delay + lookup).
- * Used in scoring: isHot → discomfort; isCold + door → toilet. See docs/next-steps-chaining-and-api.md.
+ * Step B in the chaining example: given a coarse `location` string from
+ * locationFromScenario, "call" the mocked API (delay + lookup).
+ *
+ * Used in scoring: isHot → discomfort; isCold + door → toilet.
+ * See docs/next-steps-chaining-and-api.md.
  */
 export async function weatherContext(
-  input: string
+  location: LocationFromScenarioOutput["location"]
 ): Promise<WeatherContextOutput> {
-  const location = extractLocationFromScenario(input);
   await delay(80);
   const data = MOCK_WEATHER_BY_LOCATION[location] ?? MOCK_WEATHER_BY_LOCATION.home;
   const tempC = data.tempC;
@@ -197,32 +238,32 @@ export async function weatherContext(
 // LEARNING: The orchestrator loops over MODULE_NAMES and calls MODULES[name](input).
 // To add a tool, add its name here and its function to MODULES. Trace updates automatically.
 
-export const MODULE_NAMES: ModuleName[] = [
+type ScenarioModuleName = Exclude<ModuleName, "weatherContext" | "locationFromScenario">;
+
+export const MODULE_NAMES: ScenarioModuleName[] = [
   "foodContext",
   "bodyLanguage",
   "rewardMemory",
   "emotionState",
   "timeContext",
-  "weatherContext",
 ];
 
 /** Tools: scenario in, structured output out. weatherContext returns Promise. */
 export const MODULES: Record<
-  ModuleName,
+  ScenarioModuleName,
   (
     input: string
   ) =>
     | FoodContextOutput
     | BodyLanguageOutput
+    | Promise<BodyLanguageOutput>
     | RewardMemoryOutput
     | EmotionStateOutput
-    | TimeContextOutput
-    | Promise<WeatherContextOutput>
+  | TimeContextOutput
 > = {
   foodContext,
   bodyLanguage,
   rewardMemory,
   emotionState,
   timeContext,
-  weatherContext,
 };

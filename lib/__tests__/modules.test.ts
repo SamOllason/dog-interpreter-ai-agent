@@ -8,6 +8,8 @@ import {
   rewardMemory,
   emotionState,
   timeContext,
+  locationFromScenario,
+  weatherContext,
 } from "../modules";
 
 describe("foodContext", () => {
@@ -37,23 +39,23 @@ describe("foodContext", () => {
 });
 
 describe("bodyLanguage", () => {
-  it("detects staring, whining for food scenario", () => {
+  it("detects staring, whining for food scenario (rule-based by default)", async () => {
     const input = "He's staring at me while I eat toast and whining softly.";
-    const out = bodyLanguage(input);
+    const out = await bodyLanguage(input);
     expect(out.staring).toBe(true);
     expect(out.whining).toBe(true);
   });
 
-  it("detects pacing, door focus, sniffing for toilet scenario", () => {
+  it("detects pacing, door focus, sniffing for toilet scenario (rule-based by default)", async () => {
     const input = "He's pacing by the back door and sniffing the ground, it's 10pm.";
-    const out = bodyLanguage(input);
+    const out = await bodyLanguage(input);
     expect(out.pacing).toBe(true);
     expect(out.doorFocus).toBe(true);
     expect(out.sniffing).toBe(true);
   });
 
-  it("returns all false for unrelated text", () => {
-    const out = bodyLanguage("The weather is nice.");
+  it("returns all false for unrelated text (rule-based by default)", async () => {
+    const out = await bodyLanguage("The weather is nice.");
     expect(out.staring).toBe(false);
     expect(out.pacing).toBe(false);
     expect(out.doorFocus).toBe(false);
@@ -116,5 +118,30 @@ describe("timeContext", () => {
     const out = timeContext("She's whining and staring.");
     expect(out.timeOfDay).toBe("unknown");
     expect(out.nearMealTime).toBe(false);
+  });
+});
+
+describe("locationFromScenario + weatherContext (chaining)", () => {
+  it("infers garden location and hot weather for garden scenario", async () => {
+    const scenario = "She's panting in the garden and won't settle.";
+    const loc = locationFromScenario(scenario);
+    expect(loc).toEqual({ location: "garden" });
+
+    const weather = await weatherContext(loc.location);
+    expect(weather).toMatchObject({
+      locationUsed: "garden",
+      tempC: expect.any(Number),
+      isHot: true,
+      isCold: false,
+    });
+  });
+
+  it("defaults to home when no location cues", async () => {
+    const scenario = "Inside on the sofa, nothing unusual.";
+    const loc = locationFromScenario(scenario);
+    expect(loc).toEqual({ location: "home" });
+
+    const weather = await weatherContext(loc.location);
+    expect(weather.locationUsed).toBe("home");
   });
 });

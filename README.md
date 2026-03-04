@@ -29,6 +29,28 @@ This project is designed to practice:
 - **Structured outputs**: the UI renders from a typed result (not unstructured text)
 - **Guardrail thinking**: validation, safe defaults, and clear uncertainty
 
+## What this sample covers vs not
+
+### Covered in this repo
+
+- **Deterministic orchestrator**: a single `runDogInterpreter(input)` function that calls tools, scores motivations, and returns a typed `DogInterpretation`.
+- **Modules as tools with clear contracts**: scenario-based modules (`foodContext`, `bodyLanguage`, `rewardMemory`, `emotionState`, `timeContext`, `locationFromScenario`, `weatherContext`) implemented as functions `(input: string) => StructuredOutput` with explicit TypeScript types and Jest tests.
+- **Structured outputs + traceability**: the UI renders only from `DogInterpretation` and `trace: ModuleActivation[]`, including confidence and a confidence explanation so you can see how scores were derived.
+- **Guardrails and safety agent**: an input guard for bad/off-topic scenarios plus a separate `runSafetyReview` pass in `lib/safetyAgent.ts` that reviews each interpretation for risk and surfaces a structured `SafetyReview`.
+- **Testing and a small eval runner**: unit tests around tools and the orchestrator, plus `lib/evalRunner.ts` which treats the system like a classifier and reports simple top-1 accuracy on labeled scenarios.
+- **First LLM-backed tool example**: `lib/llm/bodyLanguageClient.ts` shows the “LLM inside the tool, structured JSON out, orchestrator stays deterministic” pattern without changing the rest of the pipeline.
+- **AI-first UI**: a Next.js + React + Tailwind interface that highlights motivations, evidence, confidence, clarifying question hints, and the full trace instead of a generic chat box.
+
+### Not covered (left for later experiments)
+
+- **Planner / multi-step tool loop**: there is no ReAct-style supervisor; the orchestrator is single-shot per scenario.
+- **Multi-turn conversation state**: each interpretation is stateless; there is no short-term memory or chat transcript feeding back into `runDogInterpreter`.
+- **Dynamic tool routing**: all scenario-based modules run on every call; there is no rule-based or LLM-based router deciding which tools to invoke.
+- **Real external tools and RAG**: aside from the mocked `weatherContext`, there are no live HTTP APIs, vector databases, or knowledge-base retrieval flows.
+- **Richer multi-agent patterns**: beyond the safety critic, there is no explicit planner/executor split or specialist agents; those are suggested as future extensions.
+- **Production concerns**: no persistence, auth, deployment setup, metrics, feature flags, or rate limiting—this stays local and developer-focused.
+- **Heavy orchestration frameworks**: no LangChain or similar; everything is wired directly in TypeScript to keep the concepts clear.
+
 ## Non-goals (Phase 1)
 
 To keep this shippable fast:
@@ -38,7 +60,7 @@ To keep this shippable fast:
 - ❌ No persistence
 - ❌ No auth
 - ❌ No deployment (yet)
-- ❌ No real LLM calls (start mocked)
+- ❌ No real LLM calls in the default interpreter pipeline (LLM-backed tools live under `lib/llm` as optional extensions)
 
 ## Core Concept: "Modules" are tools
 
@@ -52,7 +74,8 @@ In this system, each module is a tool that returns structured signals.
 - 🧠 `rewardMemory` - learned patterns (`"stare got treats before"`)
 - ❤️ `emotionState` - anxiety/excitement/boredom indicators
 - 🕐 `timeContext` - time-of-day and meal-time cues inferred from the scenario (e.g. "10pm", "breakfast"). Used in scoring (e.g. door + night → stronger toilet_needed). See [Learning: Adding a new tool](#learning-adding-a-new-tool) below.
-- 🌡️ `weatherContext` - **async**, mimics a temperature/weather API: extracts location from the scenario (garden, walk, etc.), "calls" a mocked API (delay + typed response), returns `tempC`, `isHot`, `isCold`. Used in scoring (hot → discomfort; cold + door → toilet). Demonstrates chaining (location → API) and swapping for a real API later. See **[next-steps-chaining-and-api.md](docs/next-steps-chaining-and-api.md)**.
+- 🗺️ `locationFromScenario` - extracts a coarse location label from the scenario (`"home"`, `"garden"`, `"park"`, `"walk"`) so other tools can treat location as a simple string.
+- 🌡️ `weatherContext` - **async**, mimics a temperature/weather API: takes the coarse location from `locationFromScenario`, "calls" a mocked API (delay + typed response), returns `tempC`, `isHot`, `isCold`. Used in scoring (hot → discomfort; cold + door → toilet). Demonstrates chaining (scenario → location → API) and swapping for a real API later. See **[next-steps-chaining-and-api.md](docs/next-steps-chaining-and-api.md)**.
 
 Start with mocked outputs or keyword rules. Later, swap in an LLM for extraction while keeping the same contracts.
 
@@ -89,6 +112,8 @@ Optional quick toggles (later):
 - Top motivations (ranked)
 - Recommended action
 - Confidence meter
+- Confidence explanation: short text on *why* the confidence is what it is (gap between top scores, number of modules that fired)
+- Clarifying question (when confidence is low and top motivations are close): a concrete question suggesting what extra detail to add
 - Trace panel: which modules ran, what they returned, and how scoring was derived
 
 ## Architecture (Phase 1)
@@ -113,7 +138,14 @@ The orchestrator:
 ## Types (source of truth)
 
 ```ts
-type ModuleName = "foodContext" | "bodyLanguage" | "rewardMemory" | "emotionState" | "timeContext";
+type ModuleName =
+  | "foodContext"
+  | "bodyLanguage"
+  | "rewardMemory"
+  | "emotionState"
+  | "timeContext"
+  | "locationFromScenario"
+  | "weatherContext";
 
 type Motivation =
   | "food_request"
@@ -134,6 +166,8 @@ type MotivationScore = {
   motivation: Motivation;
   score: number; // 0..1
   evidence: string[]; // human-readable bullet reasons
+  // Optional maths string describing how the score was calculated and normalised.
+  calculation?: string;
 };
 
 type DogInterpretation = {
@@ -141,6 +175,8 @@ type DogInterpretation = {
   rankedMotivations: MotivationScore[]; // sorted desc; scores should roughly sum to 1
   recommendedHumanAction: string;
   confidence: number; // 0..1
+  // Short explanation of how confidence was derived (e.g. gap between top scores, number of modules).
+  confidenceExplanation?: string;
   trace: ModuleActivation[];
 };
 ```
@@ -150,7 +186,7 @@ No UI element should depend on unstructured text.
 
 ## Scoring (simple + deterministic)
 
-Phase 1 scoring is intentionally "toy but honest":
+Phase 1 scoring is intentionally **sample-sized but honest**:
 
 - Each module returns a small set of signal flags (e.g., `foodPresent`, `staring`, `pacing`, `whining`)
 - A scoring function maps signals → motivation weights
@@ -210,7 +246,7 @@ Project 01 is complete when:
 Only after Phase 1 is complete:
 
 - Swap module extraction from rules → LLM (keep contracts)
-- Add a "clarifying question" step if confidence < threshold
+- Add a "clarifying question" step if confidence < threshold (implemented as a thin helper + UI hint for low-confidence, ambiguous cases; can be extended into a full multi-turn workflow later)
 - Add multi-step workflow (plan → act → observe)
 - Add a second agent ("Critic/Safety") to review recommendations
 - Deploy one project
@@ -238,6 +274,29 @@ This repo includes **unit tests** (Jest) in `lib/__tests__/`:
 
 Tests are deterministic and fast; they document how the system is supposed to behave and guard against regressions when you add error handling, new motivations, or replace mocks with real tool calls.
 
+### Small sample eval runner
+
+Beyond unit tests, there is a tiny **eval runner** in `lib/evalRunner.ts`. It runs a handful of labeled scenarios through `runDogInterpreter` and reports how often the **top-ranked motivation** matches the expected label, plus the confidence for each case.
+
+It is intentionally minimal; treat it as a starting point for experimenting with different hypotheses (e.g. alternative scoring, tool routing strategies, or future LLM-backed modules) by:
+
+- **Adding more labeled scenarios** to the `EXAMPLES` array
+- **Comparing variants** of the interpreter (e.g. toggles in its implementation) on the same fixed examples
+
+You can run it via the npm script:
+
+```bash
+npm run eval
+```
+
+This uses [`tsx`](https://github.com/esbuild-kit/tsx) under the hood so it works cleanly with the project's existing TypeScript + ES module setup.
+
+**How to use this in practice:**
+
+- **When you change scoring or add a new hypothesis**, run `npm run eval` and check whether top-1 accuracy on the examples went up, down, or stayed flat.
+- **Keep the examples stable** while comparing variants; if you create a branch that changes `runDogInterpreter` (e.g. routing logic, future LLM-backed tools), run the same eval on that branch and compare numbers before/after.
+- For future stochastic tools (LLMs inside modules), you can extend the runner to **sample multiple runs per scenario** and compare *average* accuracy across strategies instead of relying on a single pass.
+
 ### Accessibility (a11y)
 
 The UI is built for keyboard and screen-reader users: logical tab order, visible focus rings (`focus-visible`), and ARIA where it matters. Buttons have clear `aria-label`s (e.g. "Run interpretation on the scenario above"; "Use example: Food + whining. Fills the scenario box above."). The scenario input is associated with its error message via `aria-describedby` and `aria-invalid`; the error uses `role="alert"` so it's announced when it appears. The result area is a live region (`aria-live="polite"`) so new interpretations are announced without interrupting. Landmarks and sections are labelled (`main`, `aside`, `aria-labelledby` on regions) so navigation by landmark or heading is predictable. No custom widgets-native form elements and buttons keep keyboard behaviour and semantics correct by default.
@@ -260,7 +319,7 @@ Even dogs deserve observability.
 
 ## How this relates to AI agents in real apps
 
-This project is a **toy domain**, but the architecture and testing approach map directly to production AI/agent systems:
+This project is a **sample domain**, but the architecture and testing approach map directly to production AI/agent systems:
 
 - **Deterministic orchestration** - The *orchestrator* (what runs, in what order, how results are combined) is fixed and testable. In real apps, the same idea applies: the agent loop, tool calls, and aggregation are code; only the *inside* of each tool (e.g. an LLM call) is stochastic. Keeping orchestration deterministic makes behaviour predictable and debuggable.
 
@@ -292,9 +351,9 @@ Tick off as you go. Only Phase 1 is in scope until it's complete.
 ### Phase 2 - Later (after Phase 1)
 
 - [ ] Swap module extraction from rules → LLM (keep same contracts)
-- [ ] Clarifying question step when confidence < threshold
+- [x] Clarifying question step when confidence < threshold (basic version: helper + UI hint)
+- [x] Critic/Safety agent to review recommendations (rule-based `runSafetyReview` in `lib/safetyAgent.ts`)
 - [ ] Multi-step workflow (plan → act → observe)
-- [ ] Critic/Safety agent to review recommendations
 - [ ] Deploy
 
 **Where we are now:** **Phase 1 complete.** All 1.1-1.6 are done. The `timeContext` tool is added as a learning example: one extra module, wired into scoring (door + night → toilet_needed), with comments in the code and tests.
