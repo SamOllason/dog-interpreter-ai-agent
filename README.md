@@ -14,7 +14,7 @@ This isn't just "chatbot answers" but an **observable AI behaviour** you can ins
 
 | Landing state with suggested questions | Structured result + confidence | Full tool trace / audit trail |
 |---|---|---|
-| ![Landing state](screenshots/screenshot-1.png) | ![Structured result](screenshots/screenshot-2.png) | ![Tool trace](screenshots/screenshot-3.png) |
+| ![Landing state](screenshots/screenshot-1.png) | ![Structured result](screenshots/screenshot-3.png) | ![Tool trace](screenshots/screenshot-2.png) |
 
 ## What this is
 
