@@ -1,8 +1,20 @@
-# 🐶 Dog Interpreter - Project 01
+# 🐶 Dog Interpreter
 
-An AI-native UX demo: structured reasoning + transparency (no magic chatbots)
+> AI-native UX demo: structured reasoning, tool orchestration, and transparent outputs.
 
-**This project is a learning tool.** It's designed to help you understand how AI agents work - tools, orchestration, structured outputs, and traceability - using a small, playful example (interpreting dog behaviour) instead of abstract diagrams. If you're new to agents, start with [how-this-works.md](docs/how-this-works.md) and the FAQs there; then explore the code and add a tool yourself.
+Dog Interpreter is a portfolio-focused full-stack AI project that simulates an intelligent dog behaviour analyst. You describe a moment — behaviour and context — and the system produces a structured, traceable analysis by combining:
+
+- deterministic behaviour tools (body language, vocalisation, context signals)
+- ranked motivations with confidence scoring (e.g. wants food, needs toilet, bored, alerting)
+- explicit decision tracing and audit trails so every output is inspectable end-to-end
+
+This isn't just "chatbot answers" but an **observable AI behaviour** you can inspect end-to-end.
+
+## Screenshots
+
+| Landing state with suggested questions | Structured result + confidence | Full tool trace / audit trail |
+|---|---|---|
+| ![Landing state](screenshots/screenshot-1.png) | ![Structured result](screenshots/screenshot-2.png) | ![Tool trace](screenshots/screenshot-3.png) |
 
 ## What this is
 
